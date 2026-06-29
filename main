@@ -1,0 +1,217 @@
+import React, { useState, useEffect } from "react";
+
+// -------- utils --------
+const randInt = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a;
+const choice = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+// -------- problem generators --------
+function integerProblem() {
+  const n = randInt(30, 120);
+  return {
+    text: `State: i
+Start: 1
+Goal: reach n
+Moves:
+- i → i+1 (cost 2)
+- i → i+3 (cost ${randInt(3,6)})
+- if i ≤ n/2: i → 2*i (cost ${randInt(6,10)})
+Constraint: no consecutive multiply`,
+    answer: "state+last",
+    greedy: false,
+    explanation: "Multiplication constraints require tracking last move. A greedy choice (cheapest cost) can block future doubling opportunities."
+  };
+}
+function gridProblem() {
+  const n = randInt(4, 8);
+  return {
+    text: `State: (i,j) grid ${n}x${n}
+Start: (0,0)
+Goal: (n-1,n-1)
+Moves:
+Right, Down (cost 1), Diagonal (cost 3 if i+j even)
+Constraint: no consecutive diagonals`,
+    answer: "state+last",
+    greedy: false,
+    explanation: "Diagonal usage constraints mean we must track the previous move. Greedy fails when diagonal timing matters."
+  };
+}
+
+
+function subsetProblem() {
+  const k = randInt(4,6);
+  return {
+    text: `State: subset S ⊆ {1..${k}}
+Start: empty
+Goal: full set
+Add x with cost x + |S|
+Constraint: no consecutive even picks`,
+    answer: "state+last",
+    greedy: false,
+    explanation: "Order impacts costs. Constraint requires remembering last choice. DP over subsets + last picked is necessary."
+  };
+}
+
+
+function tupleProblem() {
+  return {
+    text: `State: (i, fuel)
+Start: (0,5)
+Goal: reach n
+Moves: +1 (fuel-1), +3 (fuel-2), refuel at multiples of 5
+Constraint: no consecutive refuel`,
+    answer: "state",
+    greedy: false,
+    explanation: "Fuel is already encoded in state, so we don't need extra memory beyond state itself."
+  };
+}
+
+
+function piecewiseProblem() {
+  return {
+    text: `State: i
+Start: 1
+Goal: ≥ n
+If even: +5 or /2
+If odd: +3 or *2
+Cost: + ops cheap, * or / expensive
+Constraint: cannot alternate multiply/divide`,
+    answer: "state+mode",
+    greedy: false,
+    explanation: "Operation type must be tracked due to switching restriction. This requires augmenting state."
+  };
+}
+
+
+// -------- options --------
+function generateOptions(answerType) {
+  const pool = [
+    { key: "state", text: "dp[s]" },
+    { key: "state+last", text: "dp[s][lastMove]" },
+    { key: "state+mode", text: "dp[s][mode]" },
+    { key: "greedy", text: "greedy: pick cheapest move" },
+    { key: "full", text: "check all prior states" },
+    { key: "bfs", text: "use BFS" }
+  ];
+
+  let picks = [];
+  while (picks.length < 6) {
+    const c = choice(pool);
+    if (!picks.includes(c)) picks.push(c);
+  }
+
+
+  return picks.map((p) => {
+    let type = "wrong";
+
+
+    if (p.key === answerType) type = "correct";
+    else if (p.key === "state" || p.key === "full") type = "valid_but_bad";
+
+
+    return { text: p.text, type };
+  });
+}
+
+function generateProblem() {
+  const base = choice([
+    integerProblem,
+    gridProblem,
+    subsetProblem,
+    tupleProblem,
+    piecewiseProblem
+  ])();
+
+
+  return {
+    ...base,
+    options: generateOptions(base.answer)
+  };
+}
+
+
+// -------- UI --------
+export default function App() {
+  const [problem, setProblem] = useState(null);
+  const [selected, setSelected] = useState(null);
+  const [score, setScore] = useState(0);
+  const [streak, setStreak] = useState(0);
+  useEffect(() => {
+    setProblem(generateProblem());
+  }, []);
+
+  const select = (i) => {
+    if (selected !== null) return;
+    setSelected(i);
+
+
+    const type = problem.options[i].type;
+    if (type === "correct") {
+      setScore(score + 1);
+      setStreak(streak + 1);
+    } else {
+      setStreak(0);
+    }
+  };
+
+  const color = (opt, i) => {
+    if (selected === null) return "#fff";
+    if (i !== selected) return "#fff";
+    if (opt.type === "correct") return "#a7f3d0";    if (opt.type === "valid_but_bad") return "#fde68a";
+    return "#fca5a5";
+  };
+
+  const next = () => {
+    setProblem(generateProblem());
+    setSelected(null);
+  };
+
+  if (!problem) return <div>Loading...</div>;
+
+  return (
+    <div style={{ padding: 20, maxWidth: 700, margin: "auto" }}>
+      <h1>DP Optimal Substructure Trainer</h1>
+
+      <div style={{ marginBottom: 10 }}>
+        <b>Score:</b> {score} | <b>Streak:</b> {streak}
+      </div>
+
+      <div style={{ border: "1px solid #ccc", padding: 10, whiteSpace: "pre-wrap" }}>
+        {problem.text}
+      </div>
+
+
+      <div style={{ marginTop: 10 }}>
+        <b>Greedy?</b> {problem.greedy ? "✅ Works" : "❌ Fails"}
+      </div>
+
+
+      <div style={{ marginTop: 10 }}>
+        {problem.options.map((opt, i) => (
+          <button
+            key={i}
+            onClick={() => select(i)}
+            style={{
+              display: "block",
+              width: "100%",
+              margin: "5px 0",
+              padding: 10,
+              background: color(opt, i)
+            }}
+          >
+            {opt.text}
+          </button>
+        ))}
+      </div>
+
+      {selected !== null && (
+        <div style={{ marginTop: 15, padding: 10, border: "1px solid #aaa" }}>
+          <b>Explanation:</b>
+          <div>{problem.explanation}</div>
+        </div>
+      )}
+
+
+      <button onClick={next} style={{ marginTop: 15 }}>Next</button>
+    </div>
+  );
+}
