@@ -1,217 +1,727 @@
-import React, { useState, useEffect } from "react";
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DP Optimal Substructure Generator</title>
+  <style>
+    :root {
+      --bg: #f6f7fb;
+      --panel: #ffffff;
+      --ink: #172033;
+      --muted: #667085;
+      --line: #d9deea;
+      --primary: #335cff;
+      --primary-dark: #2646c9;
+      --good: #087443;
+      --bad: #b42318;
+      --soft: #eef2ff;
+      --shadow: 0 10px 30px rgba(16, 24, 40, 0.08);
+      --radius: 18px;
+    }
 
-// -------- utils --------
-const randInt = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a;
-const choice = (arr) => arr[Math.floor(Math.random() * arr.length)];
+    * { box-sizing: border-box; }
 
-// -------- problem generators --------
-function integerProblem() {
-  const n = randInt(30, 120);
-  return {
-    text: `State: i
-Start: 1
-Goal: reach n
-Moves:
-- i → i+1 (cost 2)
-- i → i+3 (cost ${randInt(3,6)})
-- if i ≤ n/2: i → 2*i (cost ${randInt(6,10)})
-Constraint: no consecutive multiply`,
-    answer: "state+last",
-    greedy: false,
-    explanation: "Multiplication constraints require tracking last move. A greedy choice (cheapest cost) can block future doubling opportunities."
-  };
-}
-function gridProblem() {
-  const n = randInt(4, 8);
-  return {
-    text: `State: (i,j) grid ${n}x${n}
-Start: (0,0)
-Goal: (n-1,n-1)
-Moves:
-Right, Down (cost 1), Diagonal (cost 3 if i+j even)
-Constraint: no consecutive diagonals`,
-    answer: "state+last",
-    greedy: false,
-    explanation: "Diagonal usage constraints mean we must track the previous move. Greedy fails when diagonal timing matters."
-  };
-}
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top left, #e8edff, var(--bg) 36rem);
+      color: var(--ink);
+      line-height: 1.45;
+    }
 
+    header {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 32px 18px 12px;
+    }
 
-function subsetProblem() {
-  const k = randInt(4,6);
-  return {
-    text: `State: subset S ⊆ {1..${k}}
-Start: empty
-Goal: full set
-Add x with cost x + |S|
-Constraint: no consecutive even picks`,
-    answer: "state+last",
-    greedy: false,
-    explanation: "Order impacts costs. Constraint requires remembering last choice. DP over subsets + last picked is necessary."
-  };
-}
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(1.75rem, 3vw, 2.6rem);
+      letter-spacing: -0.04em;
+    }
 
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      max-width: 850px;
+    }
 
-function tupleProblem() {
-  return {
-    text: `State: (i, fuel)
-Start: (0,5)
-Goal: reach n
-Moves: +1 (fuel-1), +3 (fuel-2), refuel at multiples of 5
-Constraint: no consecutive refuel`,
-    answer: "state",
-    greedy: false,
-    explanation: "Fuel is already encoded in state, so we don't need extra memory beyond state itself."
-  };
-}
+    main {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 18px;
+      display: grid;
+      grid-template-columns: 330px 1fr;
+      gap: 18px;
+    }
 
+    @media (max-width: 850px) {
+      main { grid-template-columns: 1fr; }
+    }
 
-function piecewiseProblem() {
-  return {
-    text: `State: i
-Start: 1
-Goal: ≥ n
-If even: +5 or /2
-If odd: +3 or *2
-Cost: + ops cheap, * or / expensive
-Constraint: cannot alternate multiply/divide`,
-    answer: "state+mode",
-    greedy: false,
-    explanation: "Operation type must be tracked due to switching restriction. This requires augmenting state."
-  };
-}
+    .card {
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
 
+    .controls, .quiz {
+      padding: 18px;
+    }
 
-// -------- options --------
-function generateOptions(answerType) {
-  const pool = [
-    { key: "state", text: "dp[s]" },
-    { key: "state+last", text: "dp[s][lastMove]" },
-    { key: "state+mode", text: "dp[s][mode]" },
-    { key: "greedy", text: "greedy: pick cheapest move" },
-    { key: "full", text: "check all prior states" },
-    { key: "bfs", text: "use BFS" }
-  ];
+    .controls { align-self: start; }
 
-  let picks = [];
-  while (picks.length < 6) {
-    const c = choice(pool);
-    if (!picks.includes(c)) picks.push(c);
-  }
+    label {
+      display: block;
+      font-weight: 700;
+      margin: 16px 0 6px;
+    }
 
+    select, input[type="number"], input[type="text"] {
+      width: 100%;
+      padding: 11px 12px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      font: inherit;
+      background: white;
+      color: var(--ink);
+    }
 
-  return picks.map((p) => {
-    let type = "wrong";
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
 
+    button {
+      border: 0;
+      border-radius: 14px;
+      padding: 12px 14px;
+      font-weight: 800;
+      cursor: pointer;
+      font: inherit;
+      transition: transform 0.05s ease, background 0.15s ease;
+    }
 
-    if (p.key === answerType) type = "correct";
-    else if (p.key === "state" || p.key === "full") type = "valid_but_bad";
+    button:active { transform: translateY(1px); }
 
+    .primary {
+      color: white;
+      background: var(--primary);
+      width: 100%;
+      margin-top: 18px;
+    }
 
-    return { text: p.text, type };
-  });
-}
+    .primary:hover { background: var(--primary-dark); }
 
-function generateProblem() {
-  const base = choice([
-    integerProblem,
-    gridProblem,
-    subsetProblem,
-    tupleProblem,
-    piecewiseProblem
-  ])();
+    .secondary {
+      background: var(--soft);
+      color: var(--primary-dark);
+      width: 100%;
+      margin-top: 10px;
+    }
 
+    .meta {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin: 0 0 14px;
+    }
 
-  return {
-    ...base,
-    options: generateOptions(base.answer)
-  };
-}
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      padding: 6px 10px;
+      background: #f2f4f7;
+      color: #344054;
+      font-size: 0.88rem;
+      font-weight: 700;
+    }
 
+    .problem {
+      font-size: 1.06rem;
+      margin-bottom: 16px;
+    }
 
-// -------- UI --------
-export default function App() {
-  const [problem, setProblem] = useState(null);
-  const [selected, setSelected] = useState(null);
-  const [score, setScore] = useState(0);
-  const [streak, setStreak] = useState(0);
-  useEffect(() => {
-    setProblem(generateProblem());
-  }, []);
+    .array {
+      background: #101828;
+      color: #f9fafb;
+      border-radius: 14px;
+      padding: 12px 14px;
+      overflow-x: auto;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      margin: 12px 0 18px;
+    }
 
-  const select = (i) => {
-    if (selected !== null) return;
-    setSelected(i);
+    .choices {
+      display: grid;
+      gap: 12px;
+    }
 
+    .choice {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 10px;
+      align-items: start;
+      width: 100%;
+      text-align: left;
+      background: #fff;
+      color: var(--ink);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 14px;
+    }
 
-    const type = problem.options[i].type;
-    if (type === "correct") {
-      setScore(score + 1);
-      setStreak(streak + 1);
-    } else {
-      setStreak(0);
-    }
-  };
+    .choice:hover { border-color: #9aa8ff; }
 
-  const color = (opt, i) => {
-    if (selected === null) return "#fff";
-    if (i !== selected) return "#fff";
-    if (opt.type === "correct") return "#a7f3d0";    if (opt.type === "valid_but_bad") return "#fde68a";
-    return "#fca5a5";
-  };
+    .choice.selected.correct {
+      border-color: var(--good);
+      background: #ecfdf3;
+    }
 
-  const next = () => {
-    setProblem(generateProblem());
-    setSelected(null);
-  };
+    .choice.selected.incorrect {
+      border-color: var(--bad);
+      background: #fef3f2;
+    }
 
-  if (!problem) return <div>Loading...</div>;
+    .letter {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #eef2ff;
+      color: #3447a8;
+      display: inline-grid;
+      place-items: center;
+      font-weight: 900;
+    }
 
-  return (
-    <div style={{ padding: 20, maxWidth: 700, margin: "auto" }}>
-      <h1>DP Optimal Substructure Trainer</h1>
+    pre {
+      white-space: pre-wrap;
+      margin: 0;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92rem;
+    }
 
-      <div style={{ marginBottom: 10 }}>
-        <b>Score:</b> {score} | <b>Streak:</b> {streak}
-      </div>
+    .result {
+      min-height: 34px;
+      margin-top: 14px;
+      font-weight: 900;
+    }
 
-      <div style={{ border: "1px solid #ccc", padding: 10, whiteSpace: "pre-wrap" }}>
-        {problem.text}
-      </div>
+    .result.good { color: var(--good); }
+    .result.bad { color: var(--bad); }
 
+    .small {
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
 
-      <div style={{ marginTop: 10 }}>
-        <b>Greedy?</b> {problem.greedy ? "✅ Works" : "❌ Fails"}
-      </div>
+    details {
+      margin-top: 18px;
+      border-top: 1px solid var(--line);
+      padding-top: 14px;
+    }
 
+    summary {
+      cursor: pointer;
+      font-weight: 800;
+    }
 
-      <div style={{ marginTop: 10 }}>
-        {problem.options.map((opt, i) => (
-          <button
-            key={i}
-            onClick={() => select(i)}
-            style={{
-              display: "block",
-              width: "100%",
-              margin: "5px 0",
-              padding: 10,
-              background: color(opt, i)
-            }}
-          >
-            {opt.text}
-          </button>
-        ))}
+    ul.compact { margin-top: 8px; padding-left: 20px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>DP Optimal Substructure Generator</h1>
+    <p class="subtitle">
+      A static, seedable multiple-choice generator for dynamic programming problems on integer lists.
+      Problems are composed from objectives, subsequence patterns, spacing rules, and optional split/region wrappers.
+    </p>
+  </header>
+
+  <main>
+    <section class="card controls">
+      <h2 style="margin-top:0">Generator Settings</h2>
+
+      <label for="level">Difficulty level</label>
+      <select id="level">
+        <option value="1">Level 1 — classic single-region DPs</option>
+        <option value="2">Level 2 — add spacing/product variations</option>
+        <option value="3">Level 3 — add maximin split/region wrappers</option>
+        <option value="4">Level 4 — equal-length regional subsequences</option>
+        <option value="5">Level 5 — equalize regional values</option>
+      </select>
+
+      <div class="row">
+        <div>
+          <label for="n">List length</label>
+          <input id="n" type="number" min="5" max="18" value="9" />
+        </div>
+        <div>
+          <label for="seed">Seed</label>
+          <input id="seed" type="number" value="12345" />
+        </div>
       </div>
 
-      {selected !== null && (
-        <div style={{ marginTop: 15, padding: 10, border: "1px solid #aaa" }}>
-          <b>Explanation:</b>
-          <div>{problem.explanation}</div>
-        </div>
-      )}
+      <button class="primary" id="newQuestion">Generate question</button>
+      <button class="secondary" id="randomSeed">Random seed</button>
 
+      <details>
+        <summary>What each level can generate</summary>
+        <ul class="compact small">
+          <li><b>Level 1:</b> max-sum contiguous, max-sum spaced, LIS, max-sum increasing, LAP, LPS, LRS.</li>
+          <li><b>Level 2:</b> spacing added to compatible subsequence families, plus positive max-product forms.</li>
+          <li><b>Level 3:</b> split into k contiguous regions and maximize the worst regional optimum.</li>
+          <li><b>Level 4:</b> regional problems where each region must use equal subsequence length.</li>
+          <li><b>Level 5:</b> regional balancing objective: minimize max regional value minus min regional value.</li>
+        </ul>
+      </details>
 
-      <button onClick={next} style={{ marginTop: 15 }}>Next</button>
-    </div>
-  );
-}
+      <p class="small">
+        This prototype intentionally reports only “correct” or “incorrect,” with no explanation after selection.
+      </p>
+    </section>
+
+    <section class="card quiz">
+      <div class="meta" id="meta"></div>
+      <div id="question"></div>
+      <div class="choices" id="choices"></div>
+      <div class="result" id="result"></div>
+    </section>
+  </main>
+
+<script>
+(function () {
+  "use strict";
+
+  const $ = (id) => document.getElementById(id);
+
+  function mulberry32(seed) {
+    let a = seed >>> 0;
+    return function() {
+      a += 0x6D2B79F5;
+      let t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function randInt(rng, lo, hi) {
+    return Math.floor(rng() * (hi - lo + 1)) + lo;
+  }
+
+  function choice(rng, arr) {
+    return arr[Math.floor(rng() * arr.length)];
+  }
+
+  function shuffle(rng, arr) {
+    const out = arr.slice();
+    for (let i = out.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [out[i], out[j]] = [out[j], out[i]];
+    }
+    return out;
+  }
+
+  function uniqueByText(items) {
+    const seen = new Set();
+    const out = [];
+    for (const item of items) {
+      const key = item.text.replace(/\s+/g, " ").trim();
+      if (!seen.has(key)) {
+        seen.add(key);
+        out.push(item);
+      }
+    }
+    return out;
+  }
+
+  function arrayForSpec(rng, n, spec) {
+    const positiveOnly = spec.measure === "product" || spec.inputRestriction === "positiveIntegers";
+    const arr = [];
+    for (let i = 0; i < n; i++) {
+      arr.push(positiveOnly ? randInt(rng, 1, 9) : randInt(rng, -8, 12));
+    }
+    // Add occasional repeats so palindrome/repeated/common problems are not too barren.
+    if (["palindrome", "repeated", "common"].includes(spec.pattern)) {
+      for (let t = 0; t < Math.max(2, Math.floor(n / 4)); t++) {
+        const i = randInt(rng, 0, n - 1);
+        const j = randInt(rng, 0, n - 1);
+        arr[j] = arr[i];
+      }
+    }
+    return arr;
+  }
+
+  function makeSpec(rng, level) {
+    const classic = [
+      { pattern: "contiguous", measure: "sum", objective: "max" },
+      { pattern: "any", measure: "sum", objective: "max", spacing: { type: "minimumGap", k: randInt(rng, 1, 3) } },
+      { pattern: "increasing", measure: "length", objective: "max" },
+      { pattern: "increasing", measure: "sum", objective: "max" },
+      { pattern: "arithmetic", measure: "length", objective: "max" },
+      { pattern: "palindrome", measure: "length", objective: "max" },
+      { pattern: "repeated", measure: "length", objective: "max" }
+    ];
+
+    const level2 = [
+      { pattern: "any", measure: "sum", objective: "max", spacing: { type: "minimumGap", k: randInt(rng, 1, 4) } },
+      { pattern: "any", measure: "product", objective: "max", spacing: { type: "minimumGap", k: randInt(rng, 1, 4) }, inputRestriction: "positiveIntegers" },
+      { pattern: "increasing", measure: "length", objective: "max", spacing: { type: "minimumGap", k: randInt(rng, 1, 3) } },
+      { pattern: "increasing", measure: "sum", objective: "max", spacing: { type: "minimumGap", k: randInt(rng, 1, 3) } },
+      { pattern: "arithmetic", measure: "length", objective: "max", spacing: { type: "minimumGap", k: randInt(rng, 1, 3) } }
+    ];
+
+    const regionalBase = [
+      { pattern: "any", measure: "sum", objective: "max" },
+      { pattern: "any", measure: "sum", objective: "max", spacing: { type: "minimumGap", k: randInt(rng, 1, 3) } },
+      { pattern: "increasing", measure: "sum", objective: "max" },
+      { pattern: "increasing", measure: "length", objective: "max" },
+      { pattern: "common", measure: "length", objective: "max" }
+    ];
+
+    let pool = classic.slice();
+    if (level >= 2) pool = pool.concat(level2);
+
+    if (level === 3) {
+      const base = choice(rng, regionalBase);
+      return normalizeSpec({
+        ...base,
+        region: {
+          type: "splitIntoKContiguousRegions",
+          k: randInt(rng, 2, 4),
+          criterion: "maximizeWorstRegion",
+          equalLengthRequired: false
+        }
+      });
+    }
+
+    if (level === 4) {
+      const base = choice(rng, regionalBase.filter(x => x.pattern !== "common" && x.measure !== "length"));
+      return normalizeSpec({
+        ...base,
+        region: {
+          type: "splitIntoKContiguousRegions",
+          k: randInt(rng, 2, 4),
+          criterion: "maximizeWorstRegion",
+          equalLengthRequired: true
+        }
+      });
+    }
+
+    if (level === 5) {
+      const base = choice(rng, [
+        { pattern: "any", measure: "sum", objective: "balance" },
+        { pattern: "any", measure: "product", objective: "balance", inputRestriction: "positiveIntegers" },
+        { pattern: "increasing", measure: "sum", objective: "balance" }
+      ]);
+      return normalizeSpec({
+        ...base,
+        region: {
+          type: "splitIntoKContiguousRegions",
+          k: randInt(rng, 2, 4),
+          criterion: "minimizeRegionalSpread",
+          equalLengthRequired: randInt(rng, 0, 1) === 1
+        }
+      });
+    }
+
+    return normalizeSpec(choice(rng, pool));
+  }
+
+  function normalizeSpec(spec) {
+    const s = JSON.parse(JSON.stringify(spec));
+
+    if (s.pattern === "palindrome") {
+      s.measure = "length";
+      s.objective = "max";
+      delete s.spacing;
+    }
+    if (s.pattern === "repeated") {
+      s.measure = "length";
+      s.objective = "max";
+      delete s.spacing;
+    }
+    if (s.pattern === "arithmetic") {
+      s.measure = "length";
+      s.objective = "max";
+    }
+    if (s.measure === "product") {
+      s.inputRestriction = "positiveIntegers";
+    }
+    return s;
+  }
+
+  function patternPhrase(spec) {
+    const gap = spec.spacing ? ` with no two chosen indices within ${spec.spacing.k} of one another` : "";
+    if (spec.pattern === "contiguous") return "contiguous subsequence";
+    if (spec.pattern === "any") return `subsequence${gap}`;
+    if (spec.pattern === "increasing") return `increasing subsequence${gap}`;
+    if (spec.pattern === "arithmetic") return `arithmetic progression subsequence${gap}`;
+    if (spec.pattern === "palindrome") return "palindromic subsequence";
+    if (spec.pattern === "repeated") return "repeated subsequence";
+    if (spec.pattern === "common") return "common subsequence shared by the chosen regions";
+    return "subsequence";
+  }
+
+  function measurePhrase(spec) {
+    if (spec.objective === "balance") {
+      return spec.measure === "product" ? "make the regional products as close as possible" : "make the regional sums as close as possible";
+    }
+    if (spec.measure === "sum") return "maximum total sum";
+    if (spec.measure === "product") return "maximum total product";
+    return "maximum length";
+  }
+
+  function questionText(spec, A) {
+    const input = `<div class="array">A = [${A.join(", ")}]</div>`;
+    let body = "";
+    if (!spec.region) {
+      body = `Find a ${patternPhrase(spec)} of A with ${measurePhrase(spec)}. Which option correctly describes the optimal substructure?`;
+    } else if (spec.region.criterion === "maximizeWorstRegion") {
+      body = `Split A into ${spec.region.k} nonempty contiguous regions. In each region, choose a ${patternPhrase(spec)} with ${measurePhrase(spec)}. Choose the split that maximizes the worst regional value${spec.region.equalLengthRequired ? ", requiring all regional subsequences to have the same length" : ""}. Which option correctly describes the optimal substructure?`;
+    } else {
+      body = `Split A into ${spec.region.k} nonempty contiguous regions. In each region, choose a ${patternPhrase(spec)} and ${measurePhrase(spec)} by minimizing max regional value minus min regional value${spec.region.equalLengthRequired ? ", requiring all regional subsequences to have the same length" : ""}. Which option correctly describes the optimal substructure?`;
+    }
+    return `<div class="problem">${body}</div>${input}`;
+  }
+
+  function baseRecurrence(spec) {
+    const k = spec.spacing?.k;
+    const gapCondition = k ? ` and i - j > ${k}` : "";
+    const gapIndex = k ? `i-${k}-1` : "i-1";
+
+    if (spec.pattern === "contiguous" && spec.measure === "sum") {
+      return {
+        scoreName: "score(l,r)",
+        text: `State:\n  dp[i] = maximum sum of a contiguous subsequence ending exactly at i\n\nRecurrence:\n  dp[i] = max(A[i], A[i] + dp[i-1])\n\nBase cases:\n  dp[0] = A[0]\n\nAnswer:\n  max_i dp[i]`
+      };
+    }
+
+    if (spec.pattern === "any" && spec.measure === "sum") {
+      if (k) {
+        return {
+          scoreName: "score(l,r)",
+          text: `State:\n  dp[i] = maximum sum obtainable from A[0..i]\n\nRecurrence:\n  dp[i] = max(dp[i-1], A[i] + dp[i-${k}-1])\n\nBase cases:\n  dp[t] = 0 for t < 0\n\nAnswer:\n  dp[n-1]`
+        };
+      }
+      return {
+        scoreName: "score(l,r)",
+        text: `State:\n  dp[i] = maximum sum obtainable from A[0..i]\n\nRecurrence:\n  dp[i] = max(dp[i-1], A[i] + max(0, dp[i-1]))\n\nBase cases:\n  dp[-1] = 0\n\nAnswer:\n  dp[n-1]`
+      };
+    }
+
+    if (spec.pattern === "any" && spec.measure === "product") {
+      return {
+        scoreName: "score(l,r)",
+        text: `Assume all A[i] are positive.\n\nState:\n  dp[i] = maximum product obtainable from A[0..i]\n\nRecurrence:\n  dp[i] = max(dp[i-1], A[i] * max(1, dp[i-${k}-1]))\n\nBase cases:\n  dp[t] = 1 for t < 0\n\nAnswer:\n  dp[n-1]`
+      };
+    }
+
+    if (spec.pattern === "increasing" && spec.measure === "length") {
+      return {
+        scoreName: "score(l,r)",
+        text: `State:\n  dp[i] = length of the longest valid increasing subsequence ending at i\n\nRecurrence:\n  dp[i] = 1 + max(0, max over j < i${gapCondition} and A[j] < A[i] of dp[j])\n\nBase cases:\n  dp[i] = 1 when no valid previous j exists\n\nAnswer:\n  max_i dp[i]`
+      };
+    }
+
+    if (spec.pattern === "increasing" && spec.measure === "sum") {
+      return {
+        scoreName: "score(l,r)",
+        text: `State:\n  dp[i] = maximum sum of a valid increasing subsequence ending at i\n\nRecurrence:\n  dp[i] = A[i] + max(0, max over j < i${gapCondition} and A[j] < A[i] of dp[j])\n\nBase cases:\n  dp[i] = A[i] when no valid previous j exists\n\nAnswer:\n  max_i dp[i]`
+      };
+    }
+
+    if (spec.pattern === "arithmetic") {
+      return {
+        scoreName: "score(l,r)",
+        text: `State:\n  dp[i][d] = length of the longest valid arithmetic progression subsequence ending at index i with difference d\n\nRecurrence:\n  for each pair j < i${gapCondition}:\n    d = A[i] - A[j]\n    dp[i][d] = max(dp[i][d], dp[j][d] + 1, 2)\n\nBase cases:\n  any valid pair has length 2\n\nAnswer:\n  max over i,d of dp[i][d]`
+      };
+    }
+
+    if (spec.pattern === "palindrome") {
+      return {
+        scoreName: "score(l,r)",
+        text: `State:\n  dp[l][r] = length of the longest palindromic subsequence in A[l..r]\n\nRecurrence:\n  if A[l] == A[r]:\n    dp[l][r] = 2 + dp[l+1][r-1]\n  otherwise:\n    dp[l][r] = max(dp[l+1][r], dp[l][r-1])\n\nBase cases:\n  dp[i][i] = 1\n  dp[l][r] = 0 when l > r\n\nAnswer:\n  dp[0][n-1]`
+      };
+    }
+
+    if (spec.pattern === "repeated") {
+      return {
+        scoreName: "score(l,r)",
+        text: `State:\n  dp[i][j] = length of the longest repeated subsequence using A[0..i-1] and A[0..j-1]\n\nRecurrence:\n  if A[i-1] == A[j-1] and i != j:\n    dp[i][j] = 1 + dp[i-1][j-1]\n  otherwise:\n    dp[i][j] = max(dp[i-1][j], dp[i][j-1])\n\nBase cases:\n  dp[0][j] = 0 and dp[i][0] = 0\n\nAnswer:\n  dp[n][n]`
+      };
+    }
+
+    if (spec.pattern === "common") {
+      return {
+        scoreName: "commonScore(region_1,...,region_k)",
+        text: `State:\n  commonDp[i1][i2]...[ik] = length of the longest subsequence common to the prefixes of all k regions\n\nRecurrence:\n  if the current last elements of all k prefixes are equal:\n    commonDp[i1][i2]...[ik] = 1 + commonDp[i1-1][i2-1]...[ik-1]\n  otherwise:\n    commonDp[i1][i2]...[ik] = max over dropping one prefix endpoint\n\nBase cases:\n  commonDp is 0 if any prefix length is 0\n\nAnswer:\n  commonDp[length(region_1)]...[length(region_k)]`
+      };
+    }
+
+    return { scoreName: "score(l,r)", text: "No recurrence available for this generated specification." };
+  }
+
+  function wrapRegion(spec, base) {
+    const K = spec.region.k;
+    if (spec.region.criterion === "maximizeWorstRegion" && !spec.region.equalLengthRequired) {
+      return {
+        text: `First compute score(l,r) using the base subsequence DP for the subarray A[l..r].\n\nSplit state:\n  splitDp[t][i] = largest possible worst-region score after splitting A[0..i] into t nonempty contiguous regions\n\nRecurrence:\n  splitDp[t][i] = max over s from t-2 to i-1 of\n                  min(splitDp[t-1][s], score(s+1,i))\n\nBase cases:\n  splitDp[1][i] = score(0,i)\n\nAnswer:\n  splitDp[${K}][n-1]`
+      };
+    }
+
+    if (spec.region.criterion === "maximizeWorstRegion" && spec.region.equalLengthRequired) {
+      return {
+        text: `First compute score(l,r,q) = the best value obtainable in A[l..r] using a valid subsequence of exactly q elements.\n\nSplit state:\n  splitDp[t][i][q] = largest possible worst-region score after splitting A[0..i] into t nonempty contiguous regions, with every region using exactly q chosen elements\n\nRecurrence:\n  splitDp[t][i][q] = max over s from t-2 to i-1 of\n                     min(splitDp[t-1][s][q], score(s+1,i,q))\n\nBase cases:\n  splitDp[1][i][q] = score(0,i,q)\n\nAnswer:\n  max_q splitDp[${K}][n-1][q]`
+      };
+    }
+
+    const exactLengthLine = spec.region.equalLengthRequired ? " for a fixed common length q" : "";
+    const finalLine = spec.region.equalLengthRequired
+      ? `min over split positions and q of max(chosen regional values) - min(chosen regional values)`
+      : `min over split positions of max(chosen regional values) - min(chosen regional values)`;
+
+    return {
+      text: `For each interval A[l..r], compute poss(l,r${spec.region.equalLengthRequired ? ",q" : ""}) = the set of achievable regional ${spec.measure}s${exactLengthLine}.\n\nSplit state:\n  balanceDp[t][i] tracks the achievable combinations of regional values after splitting A[0..i] into t nonempty contiguous regions\n\nCombination step:\n  try every previous split s, combine each achievable tuple from balanceDp[t-1][s] with each value in poss(s+1,i${spec.region.equalLengthRequired ? ",q" : ""})\n\nObjective:\n  ${finalLine}\n\nAnswer:\n  the minimum possible spread for ${K} regions`
+    };
+  }
+
+  function correctRecurrence(spec) {
+    const base = baseRecurrence(spec);
+    if (spec.region) return wrapRegion(spec, base);
+    return base;
+  }
+
+  function genericDistractors(spec) {
+    const k = spec.spacing?.k || 1;
+    const ds = [];
+
+    ds.push({ text: `State:\n  dp[i] = best answer anywhere in A[0..i]\n\nRecurrence:\n  dp[i] = max(dp[i-1], A[i] + dp[i-1])\n\nAnswer:\n  dp[n-1]` });
+
+    ds.push({ text: `State:\n  dp[i] = best answer ending at i\n\nRecurrence:\n  dp[i] = 1 + max(0, max over j < i of dp[j])\n\nAnswer:\n  max_i dp[i]` });
+
+    ds.push({ text: `State:\n  dp[l][r] = best answer in A[l..r]\n\nRecurrence:\n  dp[l][r] = max(dp[l+1][r], dp[l][r-1])\n\nAnswer:\n  dp[0][n-1]` });
+
+    if (spec.spacing) {
+      ds.push({ text: `State:\n  dp[i] = best value ending at i\n\nRecurrence:\n  dp[i] = A[i] + max(0, max over j < i and A[j] < A[i] of dp[j])\n\nAnswer:\n  max_i dp[i]` });
+      ds.push({ text: `State:\n  dp[i] = best value from A[0..i]\n\nRecurrence:\n  dp[i] = max(dp[i-1], A[i] + dp[i-${k}])\n\nAnswer:\n  dp[n-1]` });
+    }
+
+    if (spec.pattern === "increasing") {
+      ds.push({ text: `State:\n  dp[i] = best valid subsequence ending at i\n\nRecurrence:\n  dp[i] = A[i] + max(0, max over j < i of dp[j])\n\nAnswer:\n  max_i dp[i]` });
+    }
+
+    if (spec.pattern === "repeated") {
+      ds.push({ text: `State:\n  dp[i][j] = LCS length of A[0..i-1] and A[0..j-1]\n\nRecurrence:\n  if A[i-1] == A[j-1]:\n    dp[i][j] = 1 + dp[i-1][j-1]\n  otherwise:\n    dp[i][j] = max(dp[i-1][j], dp[i][j-1])\n\nAnswer:\n  dp[n][n]` });
+    }
+
+    if (spec.pattern === "arithmetic") {
+      ds.push({ text: `State:\n  dp[i] = length of the longest arithmetic progression ending at i\n\nRecurrence:\n  dp[i] = 1 + max over j < i and A[j] < A[i] of dp[j]\n\nAnswer:\n  max_i dp[i]` });
+    }
+
+    if (spec.region) {
+      ds.push({ text: `First compute score(l,r).\n\nSplit state:\n  splitDp[t][i] = best value after splitting A[0..i] into t regions\n\nRecurrence:\n  splitDp[t][i] = min over s of max(splitDp[t-1][s], score(s+1,i))\n\nBase cases:\n  splitDp[1][i] = score(0,i)\n\nAnswer:\n  splitDp[k][n-1]` });
+
+      ds.push({ text: `First compute score(l,r).\n\nSplit state:\n  splitDp[t][i] = sum of the best regional values after t regions\n\nRecurrence:\n  splitDp[t][i] = max over s of splitDp[t-1][s] + score(s+1,i)\n\nBase cases:\n  splitDp[1][i] = score(0,i)\n\nAnswer:\n  splitDp[k][n-1]` });
+    }
+
+    return ds;
+  }
+
+  function buildChoices(rng, spec) {
+    const correct = { text: correctRecurrence(spec).text, correct: true };
+    const distractors = uniqueByText(genericDistractors(spec).map(d => ({ ...d, correct: false })));
+    const picked = shuffle(rng, distractors).slice(0, 3);
+    return shuffle(rng, [correct, ...picked]);
+  }
+
+  function metaPills(spec, level) {
+    const pills = [];
+    pills.push(`Level ${level}`);
+    pills.push(spec.pattern);
+    pills.push(spec.measure);
+    if (spec.spacing) pills.push(`gap k=${spec.spacing.k}`);
+    if (spec.region) pills.push(`${spec.region.k} regions`);
+    if (spec.region?.equalLengthRequired) pills.push("equal length");
+    if (spec.region?.criterion === "minimizeRegionalSpread") pills.push("balance spread");
+    return pills.map(x => `<span class="pill">${x}</span>`).join("");
+  }
+
+  let currentChoices = [];
+  let answered = false;
+
+  function render() {
+    answered = false;
+    $("result").className = "result";
+    $("result").textContent = "";
+
+    const level = Number($("level").value);
+    const seed = Number($("seed").value) || 0;
+    const n = Math.max(5, Math.min(18, Number($("n").value) || 9));
+    $("n").value = n;
+
+    const rng = mulberry32(seed);
+    const spec = makeSpec(rng, level);
+    const A = arrayForSpec(rng, n, spec);
+    currentChoices = buildChoices(rng, spec);
+
+    $("meta").innerHTML = metaPills(spec, level);
+    $("question").innerHTML = questionText(spec, A);
+    $("choices").innerHTML = currentChoices.map((c, idx) => `
+      <button class="choice" data-idx="${idx}">
+        <span class="letter">${String.fromCharCode(65 + idx)}</span>
+        <pre>${escapeHtml(c.text)}</pre>
+      </button>
+    `).join("");
+
+    document.querySelectorAll(".choice").forEach(btn => {
+      btn.addEventListener("click", () => selectChoice(Number(btn.dataset.idx), btn));
+    });
+  }
+
+  function selectChoice(idx, btn) {
+    if (answered) return;
+    answered = true;
+    const isCorrect = currentChoices[idx].correct;
+    btn.classList.add("selected", isCorrect ? "correct" : "incorrect");
+    $("result").className = "result " + (isCorrect ? "good" : "bad");
+    $("result").textContent = isCorrect ? "Correct." : "Incorrect.";
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, ch => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;"
+    }[ch]));
+  }
+
+  $("newQuestion").addEventListener("click", () => {
+    // Advance the seed deterministically so repeated clicks produce new questions.
+    $("seed").value = (Number($("seed").value) || 0) + 1;
+    render();
+  });
+
+  $("randomSeed").addEventListener("click", () => {
+    $("seed").value = Math.floor(Math.random() * 1_000_000_000);
+    render();
+  });
+
+  $("level").addEventListener("change", render);
+  $("n").addEventListener("change", render);
+  $("seed").addEventListener("change", render);
+
+  render();
+})();
+</script>
+</body>
+</html>
